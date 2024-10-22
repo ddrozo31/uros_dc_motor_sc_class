@@ -54,6 +54,19 @@ The motor object is created with specific GPIO pins and PID parameters:
     int32_t Motor::last_ticks = 0;  // Last interval ticks
     float Motor::filtered_rpm = 0.0f;  // Filtered RPM value
 
+	// Create a motor object with specific motor and encoder pins, and PID parameters
+    // Motor(led_pin,
+	//	     ena_pin : pin for PWM signal,
+	//		 in1_pin : pin for motor CW/CCW,
+	//		 in2_pin : pin for motor CW/CCW,
+	//		 enc_a_pin : pin for encoder signal A,
+	//		 enc_b_pin : pin for encoder signal B,
+	//		 ticks_per_rev : encoder ticks per revolution,
+	//		 gear_ratio : gear ratio,
+	//		 kp : PID parameters,
+	//		 ki	: PID parameters,
+	//		 kd : PID parameters,)
+
     Motor motor(25, 11, 13, 12, 26, 27, 64, 50.0f, 0.1f, 0.1f, 0.01f);  // Motor object
 
 This initializes the motor control with GPIO pins for the motor driver and encoder, along with PID parameters.
