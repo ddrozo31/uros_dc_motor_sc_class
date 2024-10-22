@@ -8,7 +8,7 @@ This repository presents a **C++ program** designed to control a **DC motor** us
 Before working with the code, it is recommended to review the following **reStructuredText (reST)** documentation files:
 
 - **[1_MotorClass_Doc.rst](1_MotorClass_Doc.rst)**: Detailed documentation of the `Motor` class, covering the code logic and functionality.
-- **[2_MotorObject_uROS.rst](2_MotorObject_uROS.rst)**: Explanation of the `Motor` object and how it integrates with Micro-ROS.
+- **[2_MotorObject_uROS_Doc.rst](2_MotorObject_uROSC_Doc.rst)**: Explanation of the `Motor` object and how it integrates with Micro-ROS.
 
 ## Getting Started
 
@@ -37,5 +37,5 @@ For more details, explore the reST documentation and the code provided in this r
 
 ## Presentation
 
-### EIA University, Mechatronical Eng. - Industrial Robotics Laboratory 
-### Professor: David Rozo Osorio M.Sc. email: david.rozo31@eia.edu.co
+**EIA University**, Mechatronical Eng. - Industrial Robotics Laboratory 
+*Professor*: David Rozo Osorio M.Sc. email: david.rozo31@eia.edu.co
