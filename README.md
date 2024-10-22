@@ -2,10 +2,6 @@
 
 This repository presents a **C++ program** designed to control a **DC motor** using the **Raspberry Pi Pico** and **Micro-ROS**. It integrates motor control with encoder feedback, PWM speed control, and ROS2 communication for robotics and embedded systems.
 
-# Presentation
-
-## EIA University, Mechatronical Eng. - Industrial Robotics Laboratory 
-### Professor: David Rozo Osorio M.Sc. email: david.rozo31@eia.edu.co
 
 ## Prerequisites
 
@@ -38,3 +34,8 @@ This program enables:
 ---
 
 For more details, explore the reST documentation and the code provided in this repository.
+
+## Presentation
+
+### EIA University, Mechatronical Eng. - Industrial Robotics Laboratory 
+### Professor: David Rozo Osorio M.Sc. email: david.rozo31@eia.edu.co
