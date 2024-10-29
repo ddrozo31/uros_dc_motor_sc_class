@@ -3,7 +3,6 @@
 #include <hardware/irq.h>
 #include <pico/stdlib.h>
 #include <math.h>
-#include <map>
 
 #include "pico_uart_transports.h"
 #include "hardware/pwm.h"
@@ -19,97 +18,106 @@
 #include <std_msgs/msg/int32.h>
 #include <std_msgs/msg/float32.h>
 
-
-// Motor class with two encoder pins (A and B) for each motor
 class Motor {
 private:
+    // Motor driver pins (L298N)
+  // Motor driver pins
     const uint LED_PIN;
-    const uint ENA_PIN;  // PWM pin for speed control
-    const uint IN1_PIN;  // Motor direction pin 1
-    const uint IN2_PIN;  // Motor direction pin 2
-    const uint ENCODER_A_PIN;  // Encoder A pin
-    const uint ENCODER_B_PIN;  // Encoder B pin
-    const int TICKS_PER_REV;  // Encoder resolution (ticks per revolution)
-    const float GR;  // Gear ratio
+    const uint ENA_PIN;  // PWM pin for speed control (Enable A)
+    const uint IN1_PIN;  // Direction control pin 1 (IN1)
+    const uint IN2_PIN;  // Direction control pin 2 (IN2)
 
-    uint pwmSlice;  // PWM slice for motor control
+    // Encoder pins
+    const uint ENCODER_A_PIN;
+    const uint ENCODER_B_PIN;
 
-    // PID controller variables (placeholders)
-    float Kp, Ki, Kd;
-    float previous_error = 0.0f;
-    float integral = 0.0f;
-    float dt = 0.1f;  // Time step for PID calculations
+    // Encoder specifications
+    const int TICKS_PER_REV;
+    const float GR;
 
-    // Encoder tracking variables
-    volatile int32_t encoder_ticks = 0;
-    int32_t last_ticks = 0;
-    float filtered_rpm = 0.0f;
+    // PWM slice and encoder tick counter
+    uint pwmSlice;                 // PWM slice for motor control
 
-    static constexpr float alpha = 0.15f;  // Low-pass filter coefficient
+     // Static instance pointer for the current motor
+    static Motor* instance;
 
-    // Map to store motor instances by encoder pins
-    static std::map<uint, Motor*> motor_map;
+    // Static variables for calculating RPM
+    static volatile int32_t encoder_ticks; // Store the number of encoder ticks
+    static int32_t last_ticks;
+    static constexpr float time_interval_sec = 0.1f;  // Timer interval in seconds (100ms)
 
-    // Static interrupt handler (for both A and B pins)
-    static void encoder_irq_handler(uint gpio, uint32_t events) {
-        if (motor_map.find(gpio) != motor_map.end()) {
-            motor_map[gpio]->handle_encoder_interrupt(gpio, events);
-        }
+    // Low-pass filter variables
+    static constexpr float alpha = 0.15f;  // Smoothing factor
+    static float filtered_rpm;              // Previous filtered RPM value
+
+    // PID controller variables
+    float Kp;
+    float Ki;
+    float Kd;
+
+    float previous_error = 0.0f; // Previous error for the derivative term
+    float integral = 0.0f;       // Accumulated integral error
+    float dt = time_interval_sec; // Time interval for PID calculations (same as RPM calculation interval)
+
+
+// Private encoder interrupt handler
+    static void encoder_a_irq_handler(uint gpio, uint32_t events) {
+        // Forward the interrupt to the instance's handler
+        instance->handle_encoder_interrupt(gpio, events);
     }
 
-    // Non-static method to process encoder interrupts
+    // Non-static method to handle the encoder interrupt
     void handle_encoder_interrupt(uint gpio, uint32_t events) {
         bool encoder_a = gpio_get(ENCODER_A_PIN);
         bool encoder_b = gpio_get(ENCODER_B_PIN);
 
         if (gpio == ENCODER_A_PIN) {
-            // Process A pin interrupt
             if ((encoder_a && !encoder_b) || (!encoder_a && encoder_b)) {
                 encoder_ticks++;  // Forward direction
             } else {
                 encoder_ticks--;  // Reverse direction
             }
         } else if (gpio == ENCODER_B_PIN) {
-            // Process B pin interrupt
             if ((encoder_a && !encoder_b) || (!encoder_a && encoder_b)) {
-                encoder_ticks--;  // Reverse direction
+                encoder_ticks--;  // Forward direction
             } else {
-                encoder_ticks++;  // Forward direction
+                encoder_ticks++;  // Reverse direction
             }
         }
     }
 
 public:
-    // Constructor to initialize the motor with pins and settings
-    Motor(uint led_pin, uint ena_pin, uint in1_pin, uint in2_pin,
-          uint enc_a_pin, uint enc_b_pin, int ticks_per_rev = 64,
-          float gear_ratio = 50.0f, float kp = 0.1158f, float ki = 0.4634f, float kd = 0.0f)
-        : LED_PIN(led_pin), ENA_PIN(ena_pin), IN1_PIN(in1_pin), IN2_PIN(in2_pin),
+    // Constructor
+     Motor(uint led_pin = 25, uint ena_pin = 2, uint in1_pin = 3, uint in2_pin = 4, 
+          uint enc_a_pin = 5, uint enc_b_pin = 6, 
+          int ticks_per_rev = 64, float gear_ratio = 50.0f, 
+          float kp = 0.1158f, float ki = 0.4634f, float kd = 0.0f) :
+          LED_PIN(led_pin), ENA_PIN(ena_pin), IN1_PIN(in1_pin), IN2_PIN(in2_pin),
           ENCODER_A_PIN(enc_a_pin), ENCODER_B_PIN(enc_b_pin),
-          TICKS_PER_REV(ticks_per_rev), GR(gear_ratio), Kp(kp), Ki(ki), Kd(kd) {
-        
-        // Register this motor's encoder pins in the motor map
-        motor_map[ENCODER_A_PIN] = this;
-        motor_map[ENCODER_B_PIN] = this;
+          TICKS_PER_REV(ticks_per_rev), GR(gear_ratio), 
+          Kp(kp), Ki(ki), Kd(kd) {
 
-        // Initialize motor driver pins
+        // Set the static instance pointer to this object
+        instance = this;
+
+        // Configure GPIO pins for the motor driver
         gpio_init(LED_PIN);
         gpio_set_dir(LED_PIN, GPIO_OUT);
-        gpio_put(LED_PIN, 0);
+        gpio_put(LED_PIN, 0);  // Turn off LED initially
 
         gpio_init(IN1_PIN);
         gpio_init(IN2_PIN);
         gpio_set_dir(IN1_PIN, GPIO_OUT);
         gpio_set_dir(IN2_PIN, GPIO_OUT);
 
-        // Set up PWM for speed control
+        // Set up PWM for speed control on ENA_PIN
         gpio_set_function(ENA_PIN, GPIO_FUNC_PWM);
         pwmSlice = pwm_gpio_to_slice_num(ENA_PIN);
-        pwm_set_wrap(pwmSlice, 65535);
-        pwm_set_chan_level(pwmSlice, PWM_CHAN_A, 0);
-        pwm_set_enabled(pwmSlice, true);
+        pwm_set_wrap(pwmSlice, 65535);  // Set PWM wrap for 16-bit resolution
+        pwm_set_chan_level(pwmSlice, PWM_CHAN_A, 0);  // Set initial duty cycle (stopped)
+        pwm_set_enabled(pwmSlice, true);  // Enable PWM
 
-        // Initialize encoder pins
+        // Configure encoder pins and interrupts
         gpio_init(ENCODER_A_PIN);
         gpio_init(ENCODER_B_PIN);
         gpio_set_dir(ENCODER_A_PIN, GPIO_IN);
@@ -117,59 +125,88 @@ public:
         gpio_pull_up(ENCODER_A_PIN);
         gpio_pull_up(ENCODER_B_PIN);
 
-        // Register interrupts for encoder pins
-        gpio_set_irq_enabled_with_callback(ENCODER_A_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &encoder_irq_handler);
-        gpio_set_irq_enabled_with_callback(ENCODER_B_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &encoder_irq_handler);
+        // Enable interrupts for encoder pins A and B
+        gpio_set_irq_enabled_with_callback(ENCODER_A_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &encoder_a_irq_handler);
+        gpio_set_irq_enabled(ENCODER_B_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
     }
 
-    // Method to control motor speed and direction
+    // Function to control the DC motor speed and direction
     void set_motor(float speed) {
-        uint16_t pwm_value = (uint16_t)fabs(speed);
+        uint16_t pwm_value = (uint16_t)fabs(speed);  // Take the absolute value of the speed
 
         if (speed > 0) {
+            // Forward direction
             gpio_put(IN1_PIN, 1);
             gpio_put(IN2_PIN, 0);
         } else if (speed < 0) {
+            // Reverse direction
             gpio_put(IN1_PIN, 0);
             gpio_put(IN2_PIN, 1);
         } else {
+            // Stop the motor
             gpio_put(IN1_PIN, 0);
             gpio_put(IN2_PIN, 0);
         }
 
-        pwm_set_gpio_level(ENA_PIN, (uint16_t)(pwm_value * 65535 / 100));
+        // Set PWM duty cycle for speed control, scaled to 16-bit resolution
+        pwm_set_gpio_level(ENA_PIN, (uint16_t)(pwm_value * 65535 / 100));  // Map 0-100% to 16-bit PWM
     }
 
-    // Method to calculate and return RPM
-    void calculate_rpm(float* revs, float* rpm) {
+    // Function to calculate motor RPM based on encoder ticks and apply a low-pass filter
+    void calculate_rpm(float *revs, float *rpm ) {
+        // Calculate ticks since the last calculation
+		
         int32_t ticks_since_last = encoder_ticks - last_ticks;
         last_ticks = encoder_ticks;
 
-        *revs = encoder_ticks / TICKS_PER_REV;
+		*revs = encoder_ticks / TICKS_PER_REV;
 
-        float raw_rpm = ((float)ticks_since_last / TICKS_PER_REV) * (60.0f / dt) * (1.0f / GR);
-        *rpm = apply_low_pass_filter(raw_rpm);
+        // Calculate raw RPM
+        float raw_rpm = ((float)ticks_since_last / TICKS_PER_REV) * (60.0f / time_interval_sec) * (1.0f / GR);
+
+        // Apply low-pass filter to the raw RPM value
+        *rpm = applyLowPassFilter(raw_rpm);
     }
 
-    // Low-pass filter for RPM
-    float apply_low_pass_filter(float raw_rpm) {
+    // Function to apply a digital low-pass filter
+    float applyLowPassFilter(float raw_rpm) {
+        // First-order digital low-pass filter
         filtered_rpm = alpha * raw_rpm + (1.0f - alpha) * filtered_rpm;
         return filtered_rpm;
     }
 
-        // Toggle the onboard LED for indication
+    // Get the current encoder tick count
+    int32_t getEncoderTicks() const {
+        return encoder_ticks;
+    }
+
+    // Reset encoder ticks
+    void resetEncoderTicks() {
+        encoder_ticks = 0;
+        last_ticks = 0;
+        filtered_rpm = 0.0f;  // Reset filtered RPM value
+        integral = 0.0f;      // Reset integral term
+        previous_error = 0.0f; // Reset previous error
+    }
+
+    // Toggle the onboard LED for indication
     void toggleLED() {
         gpio_put(LED_PIN, !gpio_get(LED_PIN));
     }
 };
 
-// Initialize the static motor map
-std::map<uint, Motor*> Motor::motor_map;
+// Initialize the static instance pointer
+Motor* Motor::instance = nullptr;
+
+// Initialize static variables
+volatile int32_t Motor::encoder_ticks = 0;
+int32_t Motor::last_ticks = 0;
+float Motor::filtered_rpm = 0.0f;
 
 // Create a motor object with specific motor and encoder pins, and PID parameters
 // Motor(uint led_pin = 25, uint ena_pin = 11, uint in1_pin = 13, uint in2_pin = 12, uint enc_a_pin = 26, uint enc_b_pin = 27, int ticks_per_rev = 64, float gear_ratio = 50.0f, float kp = 0.1158f, float ki = 0.4634f, float kd = 0.0f)
 
-Motor motor1(22, 9, 8, 7, 17, 16, 64, 50.0f, 0.1f, 0.1f, 0.01f);     // (25, 11, 13, 12, 26, 27, 64, 50.0f, 0.1f, 0.1f, 0.01f);
+Motor motor(25, 11, 13, 12, 26, 27, 64, 50.0f, 0.1f, 0.1f, 0.01f);
 
 float cmd = 0.0f; // cmd Motor
 
@@ -200,18 +237,19 @@ void cmd_callback(const void * msgin) {
 void debug_timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
 
     // Example usage: Calculate the current RPM
-	float position1 = 0.0f;
-	float speed1 = 0.0f;
-    
-    
-    motor1.calculate_rpm(&position1, &speed1);
+	float position = 0.0f;
+	float speed = 0.0f;
+    motor.calculate_rpm(&position, &speed);
 
-    // Apply the control signal to the motor 1
-    motor1.set_motor(cmd);
+    // Apply the control signal to the motor
+    motor.set_motor(cmd);
 
-    // Publish the debug message
-    debug_msg.linear.x = position1;
-    debug_msg.linear.y = speed1;
+
+    motor.toggleLED();  // Toggle the onboard LED
+
+	// Publish the debug message
+    debug_msg.linear.x = position;
+    debug_msg.linear.y = speed;
 	debug_msg.linear.z = cmd;
 
     rcl_ret_t ret2 = rcl_publish(&debug_pub, &debug_msg, NULL);
