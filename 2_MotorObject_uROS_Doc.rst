@@ -49,10 +49,8 @@ The motor object is created with specific GPIO pins and PID parameters:
 
 .. code-block:: cpp
 
-    Motor* Motor::instance = nullptr;  // Static instance pointer
-    volatile int32_t Motor::encoder_ticks = 0;  // Encoder ticks
-    int32_t Motor::last_ticks = 0;  // Last interval ticks
-    float Motor::filtered_rpm = 0.0f;  // Filtered RPM value
+    // Initialize the static motor map
+    std::map<uint, Motor*> Motor::motor_map;
 
 	// Create a motor object with specific motor and encoder pins, and PID parameters
     	// Motor(led_pin,
@@ -67,7 +65,7 @@ The motor object is created with specific GPIO pins and PID parameters:
 	//	 ki : PID parameters,
 	//	 kd : PID parameters,)
 
-    Motor motor(25, 11, 13, 12, 26, 27, 64, 50.0f, 0.1f, 0.1f, 0.01f);  // Motor object
+    Motor motor1(25, 11, 13, 12, 26, 27, 64, 50.0f, 0.1f, 0.1f, 0.01f);  // Motor object
 
 This initializes the motor control with GPIO pins for the motor driver and encoder, along with PID parameters.
 
@@ -128,17 +126,17 @@ Timer Callback for RPM Calculation and Publishing
 .. code-block:: cpp
 
     void debug_timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
-        float position = 0.0f;
-        float speed = 0.0f;
+        float position1 = 0.0f;
+        float speed1 = 0.0f;
 
-        motor.calculate_rpm(&position, &speed);  // Calculate RPM and position
-        motor.set_motor(cmd);  // Apply speed command
+        motor1.calculate_rpm(&position1, &speed1);  // Calculate RPM and position
+        motor1.set_motor(cmd);  // Apply speed command
 
-        motor.toggleLED();  // Toggle onboard LED
+        motor1.toggleLED();  // Toggle onboard LED
 
         // Publish motor status
-        debug_msg.linear.x = position;
-        debug_msg.linear.y = speed;
+        debug_msg.linear.x = position1;
+        debug_msg.linear.y = speed1;
         debug_msg.linear.z = cmd;
 
         rcl_publish(&debug_pub, &debug_msg, NULL);
