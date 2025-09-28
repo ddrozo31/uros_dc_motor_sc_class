@@ -145,25 +145,17 @@ public:
         int32_t ticks_since_last = encoder_ticks - last_ticks;
         last_ticks = encoder_ticks;
 
+        // Calculate position of the output shaft in radians
         *revs = (float)encoder_ticks * (1.0f / 64.0f) * (2*M_PI / 1.0f) * (1.0f / 50.0f);
  
+        // Calculate RPM of the output shaft after gear reduction
         float raw_rpm = ((float)ticks_since_last / TICKS_PER_REV) * (60.0f / dt) * (1.0f / GR);
         *rpm = apply_low_pass_filter(raw_rpm);
     }
 
-    void pos_control(float sp, float pos, float* error, float* cmd)
+    void control(float sp, float pos, float* error, float* cmd)
     {
-        float e = (sp - pos);
-        integral += e * dt;
-        float u = Kp * e + Ki * integral + Kd * (e - previous_error) / dt;
-
-        u = map(u, -1.0f, 1.0f, -100.0f, 100.0f);
-
-        if (u > 100.0f) u = 100.0f;
-        if (u < -100.0f) u = -100.0f;
-
-        *cmd = u;
-        *error = e;
+        // Control Law Method
     }
 
     void set_pid(float kp, float ki, float kd) {
@@ -216,11 +208,12 @@ float map(float x, float in_min, float in_max, float out_min, float out_max) {
 // ROS2 subscriber callback for receiving Twist messages
 void cmd_callback(const void * msgin) {
     const geometry_msgs__msg__Twist * twist_msg_const = (const geometry_msgs__msg__Twist *)msgin;
-    printf("Received speed setpoint: %f\n", twist_msg_const->angular.z);
+    //printf("Received speed setpoint: %f\n", twist_msg_const->angular.z);
 
-    // Setpoint for the desired RPM
+    // Setpoint for the desired RPM in percent (0 to 100)
     sp = (float)twist_msg_const->angular.z;
-    // PID parameters
+
+    // PID parameters come from the linear part of the Twist message sent from the pc
     kp = (float)twist_msg_const->linear.x;
     ki = (float)twist_msg_const->linear.y;
     kd = (float)twist_msg_const->linear.z;
@@ -240,14 +233,14 @@ void debug_timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
 
     motor1.set_pid(kp, 0.0f, 0.0f);
 
-    motor1.pos_control(sp, position1, &error, &cmd);
+    // Put your control law here
 
     // Apply the control signal to the motor 1
-    motor1.set_motor(cmd);
+    motor1.set_motor(sp);
 
     // Publish the debug message
     debug_msg.linear.x = position1;
-    debug_msg.linear.y = cmd;
+    debug_msg.linear.y = sp;
 	debug_msg.linear.z = error;
 
     debug_msg.angular.x = kp;
